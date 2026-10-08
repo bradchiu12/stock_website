@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的專屬持股看板</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+  <style>
+    body { padding: 20px; background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .container { max-width: 1200px; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    .profit { color: #dc3545 !important; font-weight: bold; } 
+    .loss { color: #198754 !important; font-weight: bold; }  
+    th { white-space: nowrap; }
+    .nav-tabs .nav-link { cursor: pointer; font-weight: bold; color: #6c757d; border-radius: 8px 8px 0 0; }
+    .nav-tabs .nav-link.active { color: #0d6efd; border-bottom: 3px solid #0d6efd; background-color: #f8f9fa; }
+    
+    /* 凍結表格標題列 (手機滑動時標題固定) */
+    .table-responsive { 
+      margin-top: 20px; 
+      max-height: 60vh; 
+      overflow-y: auto; 
+    }
+    #table-head th {
+      position: sticky;
+      top: 0;
+      z-index: 10; 
+      background-color: #212529 !important; 
+      color: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- 標題與按鈕區塊 -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4">
+      <h2 class="fw-bold mb-3 mb-md-0">📈 我的專屬持股看板</h2>
+      
+      <!-- 右側按鈕群與大盤膠囊 -->
+      <div class="d-flex align-items-center flex-wrap justify-content-center gap-2">
+        <!-- 大盤加權指數 (專業雙層排版版) -->
+        <div class="px-3 py-2 rounded bg-white border shadow-sm d-flex align-items-center">
+          <span class="fw-bold text-muted me-3" style="font-size: 0.95rem;">大盤</span>
+          <div id="taiexDisplay" class="text-end">
+            <!-- 這裡預留給讀取中的轉圈圈 -->
+            <span class="spinner-border spinner-border-sm text-muted" role="status" aria-hidden="true"></span>
+          </div>
+        </div>
+        
+        <button class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
+          ➕ 新增持股
+        </button>
+        <button id="refreshBtn" class="btn btn-primary shadow-sm" onclick="refreshWebData()">
+          🔄 獲取最新即時股價
+        </button>
+      </div>
+    </div>
+
+    <!-- 頂部數據儀表板 (四格響應式升級版：加入今日損益) -->
+    <div id="dashboard" class="row mb-4" style="display:none;">
+      <div class="col-12">
+        <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);">
+          <div class="card-body row text-center py-3 m-0 align-items-center">
+            
+            <div class="col-6 col-md-3 mb-3 mb-md-0">
+              <div class="text-muted fw-bold mb-1" style="font-size: 0.85rem;">總投入成本</div>
+              <h5 id="totalCost" class="mb-0 fw-bold text-dark">0</h5>
+            </div>
+            
+            <div class="col-6 col-md-3 mb-3 mb-md-0">
+              <div class="text-muted fw-bold mb-1" style="font-size: 0.85rem;">總市值</div>
+              <h5 id="totalValue" class="mb-0 fw-bold text-dark">0</h5>
+            </div>
+            
+            <!-- 新增：今日損益區塊 -->
+            <div class="col-6 col-md-3 mt-2 mt-md-0 border-md-start">
+              <div class="text-muted fw-bold mb-1" style="font-size: 0.9rem;">今日損益</div>
+              <h4 id="todayProfit" class="mb-0 fw-bold">0</h4>
+            </div>
+
+            <div class="col-6 col-md-3 mt-2 mt-md-0">
+              <div class="text-muted fw-bold mb-1" style="font-size: 0.9rem;">未實現總損益</div>
+              <h4 id="totalProfit" class="mb-0 fw-bold">0</h4>
+            </div>
+            
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading 畫面 -->
+    <div id="loading" class="text-center my-5">
+      <div id="spinner-icon" class="spinner-border text-primary" role="status"></div>
+      <div id="loading-text" class="mt-3 text-muted fw-bold">從資料庫讀取最新即時報價中...</div>
+    </div>
+
+    <!-- 股票表格區 -->
+    <div id="app" style="display:none;">
+      <ul class="nav nav-tabs mb-3" id="sheetTabs"></ul>
+      <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle text-center">
+          <thead class="table-dark" id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增持股彈出視窗 -->
+  <div class="modal fade" id="addStockModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold">➕ 新增持股資料</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">選擇分類 (工作表)</label>
+            <select class="form-select" id="inputSheetIndex"></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">股票代號</label>
+            <input type="text" class="form-control" id="inputTicker" placeholder="例如: 2330">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">買進成本</label>
+            <input type="number" class="form-control" id="inputCost" placeholder="例如: 950">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">持有股數</label>
+            <input type="number" class="form-control" id="inputShares" placeholder="例如: 1000">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-success" onclick="submitStock()">確認送出</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 👇👇👇 【非常重要】請將這裡換成你剛從 Apps Script 部署拿到的「網頁應用程式網址」 👇👇👇
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyQ67qcC6l5MAF2gseU1VMQIzFySky23N46G4_FPbYKy-TQU9Uw5dRMgeEMq3YeCQuw/exec'; 
+
+    window.onerror = function(msg, url, lineNo) { showError(`前端語法錯誤：${msg} (行 ${lineNo})`); return false; };
+    function showError(errorMsg) {
+      document.getElementById('spinner-icon').style.display = 'none';
+      document.getElementById('loading-text').innerHTML = `<h4 class="text-danger mb-3 mt-3">❌ 發生錯誤！</h4><div class="alert alert-danger text-start">${errorMsg}</div>`;
+    }
+
+    let globalData = []; 
+    let globalChartData = {}; 
+    let currentSheetIndex = 0; 
+
+    // === 🚀 核心通訊機制：與 Apps Script API 溝通 ===
+    async function callAPI(action, payload = null) {
+      try {
+        let response;
+        if (payload) {
+          payload.action = action;
+          response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' } // 使用 text/plain 避開 CORS 限制
+          });
+        } else {
+          response = await fetch(SCRIPT_URL + "?action=" + action);
+        }
+        return await response.json();
+      } catch (err) {
+        throw new Error(err);
+      }
+    }
+
+    // === 讀取大盤資訊功能 ===
+    function loadTaiex(isBackground = false) {
+      const display = document.getElementById('taiexDisplay');
+      if (!isBackground) display.innerHTML = '<span class="spinner-border spinner-border-sm text-muted" role="status"></span>';
+
+      callAPI('getTaiexData').then(data => {
+        if(data && !data.error) {
+          let price = data.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          let changeStr = Math.abs(data.change).toFixed(2);
+          let percent = Math.abs(data.percent).toFixed(2);
+          let colorClass = data.change > 0 ? "profit" : (data.change < 0 ? "loss" : "text-dark");
+          let sign = data.change > 0 ? "+" : (data.change < 0 ? "-" : "");
+          
+          display.innerHTML = `
+            <div class="d-flex flex-column fw-bold ${colorClass}" style="line-height: 1.2;">
+              <span style="font-size: 1.15rem;">${price}</span>
+              <span style="font-size: 0.85rem;">${sign}${changeStr} (${sign}${percent}%)</span>
+            </div>`;
+        } else {
+          if (!isBackground) display.innerHTML = '<span class="text-danger fw-bold" style="font-size:0.9rem;">讀取失敗</span>';
+        }
+      }).catch(err => console.error(err));
+    }
+
+    // === 網頁初次啟動邏輯 ===
+    try {
+      loadTaiex(); 
+      setInterval(() => loadTaiex(true), 10000); // 10秒背景更新大盤
+
+      callAPI('getSheetData').then(data => {
+         if(data.error) throw new Error(data.error);
+         if(!data) throw new Error("無資料"); 
+         showData(data); 
+      }).catch(err => showError("連線錯誤：" + err.message));
+    } catch(err) { showError("系統啟動失敗：" + err.message); }
+
+    // === 重新獲取資料 ===
+    function refreshWebData() {
+      const btn = document.getElementById('refreshBtn');
+      const app = document.getElementById('app');
+      
+      btn.disabled = true; btn.innerHTML = '⏳ 抓取中...';
+      app.style.display = 'none';
+      document.getElementById('spinner-icon').style.display = 'inline-block';
+      document.getElementById('loading-text').innerHTML = '從資料庫讀取最新即時報價中...';
+      document.getElementById('loading').style.display = 'block';
+      
+      globalChartData = {}; 
+      loadTaiex(); 
+
+      callAPI('forceRefreshData').then(data => {
+          showData(data); 
+          btn.disabled = false; btn.innerHTML = '🔄 獲取最新即時股價'; 
+      }).catch(err => {
+          btn.disabled = false; btn.innerHTML = '🔄 獲取最新即時股價'; 
+          showError("更新失敗：" + err.message);
+      });
+    }
+
+    // === 新增持股 ===
+    function submitStock() {
+      const sheetName = document.getElementById('inputSheetIndex').value;
+      const data = {
+        ticker: document.getElementById('inputTicker').value,
+        cost: document.getElementById('inputCost').value,
+        shares: document.getElementById('inputShares').value
+      };
+      
+      if(!data.ticker) { alert("請輸入股票代號！"); return; }
+      
+      var modalEl = document.getElementById('addStockModal');
+      var modal = bootstrap.Modal.getInstance(modalEl);
+      modal.hide();
+      
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('spinner-icon').style.display = 'inline-block';
+      document.getElementById('loading-text').innerHTML = '資料寫入資料庫並重新計算中...';
+      document.getElementById('loading').style.display = 'block';
+
+      callAPI('addStockToSheet', { sheetName: sheetName, stockData: data }).then(updatedData => {
+         document.getElementById('inputTicker').value = '';
+         document.getElementById('inputCost').value = '';
+         document.getElementById('inputShares').value = '';
+         showData(updatedData);
+      }).catch(err => showError("新增失敗：" + err.message));
+    }
+
+    // === 刪除/賣出持股 ===
+    function deleteStock(sheetName, rowIndex, stockName, currentShares) {
+      let input = prompt(`您目前持有「${stockName}」共 ${currentShares} 股。\n請輸入這次要賣出/刪除的股數：`, currentShares);
+      if (input === null || input.trim() === "") return; 
+      
+      let sellShares = parseFloat(input);
+      if (isNaN(sellShares) || sellShares <= 0) { alert("請輸入有效的正數字！"); return; }
+
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('spinner-icon').style.display = 'inline-block';
+      document.getElementById('loading-text').innerHTML = '正在更新持股資料中...';
+      document.getElementById('loading').style.display = 'block';
+
+      callAPI('reduceStockShares', { sheetName: sheetName, rowIndex: rowIndex, sharesToSell: sellShares })
+        .then(updatedData => showData(updatedData))
+        .catch(err => showError("更新失敗：" + err.message));
+    }
+
+    // === 顯示選單與切換分頁 ===
+    function showData(allSheetsData) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      globalData = allSheetsData;
+
+      const tabsContainer = document.getElementById('sheetTabs');
+      const selectBox = document.getElementById('inputSheetIndex');
+      let tabsHTML = '';
+      let selectHTML = '';
+
+      allSheetsData.forEach((sheet, index) => {
+        let activeClass = index === currentSheetIndex ? 'active' : '';
+        tabsHTML += `<li class="nav-item"><a class="nav-link ${activeClass}" onclick="renderTable(${index}, this)">${sheet.sheetName}</a></li>`;
+        selectHTML += `<option value="${sheet.sheetName}" ${activeClass ? 'selected' : ''}>${sheet.sheetName}</option>`;
+      });
+      tabsContainer.innerHTML = tabsHTML;
+      selectBox.innerHTML = selectHTML;
+
+      if (allSheetsData.length > 0) renderTable(currentSheetIndex, tabsContainer.querySelector('.nav-link.active'));
+    }
+
+    // === 渲染表格與計算儀表板 (包含今日損益自動推算) ===
+    function renderTable(sheetIndex, element) {
+      currentSheetIndex = sheetIndex;
+      document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active'));
+      if(element) element.classList.add('active');
+
+      const sheet = globalData[sheetIndex];
+      const data = sheet.data;
+      const thead = document.getElementById('table-head');
+      const tbody = document.getElementById('table-body');
+
+      let headHTML = '<tr>';
+      if(data.length > 0) {
+        data[0].forEach(col => { headHTML += `<th>${col}</th>`; });
+        headHTML += `<th>操作</th>`;
+      }
+      headHTML += '</tr>';
+      thead.innerHTML = headHTML;
+
+      let costIndex = -1, valueIndex = -1, profitIndex = -1;
+      let sharesIndex = -1, changeIndex = -1;
+      
+      if (data.length > 0) {
+        data[0].forEach((col, idx) => {
+          let headerText = col.toString().trim();
+          if(headerText.includes('股數') || headerText.includes('數量')) sharesIndex = idx;
+          if(headerText.includes('成本') && headerText.includes('總')) costIndex = idx;
+          if(headerText.includes('市值') || headerText.includes('現值')) valueIndex = idx;
+          if((headerText.includes('未實現損益') || headerText.includes('損益')) && !headerText.includes('%') && !headerText.includes('今日')) profitIndex = idx; 
+          if(headerText.includes('漲跌') && !headerText.includes('幅') && !headerText.includes('%')) changeIndex = idx;
+        });
+      }
+
+      let sumCost = 0, sumValue = 0, sumProfit = 0, sumTodayProfit = 0;
+      let bodyHTML = '';
+
+      for(let i = 1; i < data.length; i++) {
+        if(!data[i][0] && !data[i][1]) continue; 
+
+        // 數字過濾器
+        let getCleanNumber = (val) => {
+            if (!val) return 0;
+            let str = val.toString();
+            let isNegative = str.includes('-') || str.includes('▼') || str.includes('跌'); 
+            let cleanStr = str.replace(/[^\d.]/g, ''); 
+            let num = parseFloat(cleanStr) || 0;
+            return isNegative ? -num : num;
+        };
+
+        if(costIndex !== -1) sumCost += getCleanNumber(data[i][costIndex]);
+        if(valueIndex !== -1) sumValue += getCleanNumber(data[i][valueIndex]);
+        if(profitIndex !== -1) sumProfit += getCleanNumber(data[i][profitIndex]);
+
+        // 計算今日損益 (漲跌 * 股數)
+        if(changeIndex !== -1 && sharesIndex !== -1) {
+            let changeAmount = getCleanNumber(data[i][changeIndex]);
+            let sharesCount = getCleanNumber(data[i][sharesIndex]);
+            sumTodayProfit += (changeAmount * sharesCount); 
+        }
+
+        let stockName = data[i][0] || data[i][1] || '此檔股票';
+        let currentShares = sharesIndex !== -1 ? (parseFloat(data[i][sharesIndex]) || 0) : 0;
+
+        bodyHTML += '<tr>';
+        data[i].forEach((cell, index) => {
+          let headerText = data[0][index] || "";
+          if (headerText.includes('走勢')) {
+              let ticker = cell.toString().trim();
+              let uniqueId = 'spark_' + sheetIndex + '_' + i;
+              bodyHTML += `<td style="width:120px; vertical-align:middle;"><div id="${uniqueId}" class="stock-sparkline" data-ticker="${ticker}">⏳</div></td>`;
+              return;
+          }
+
+          let cellClass = '';
+          let numVal = parseFloat(cell.toString().replace(/,/g, '').replace('%', ''));
+          if ((headerText.includes('漲跌') || headerText.includes('損益') || headerText.includes('報酬')) && !isNaN(numVal) && cell !== '') {
+              if (numVal > 0 || cell.toString().includes('▲')) cellClass = 'profit';
+              else if (numVal < 0 || cell.toString().includes('▼')) cellClass = 'loss';
+          }
+          bodyHTML += `<td class="${cellClass}">${cell}</td>`;
+        });
+        
+        bodyHTML += `<td style="vertical-align:middle;">
+                       <button class="btn btn-sm btn-outline-danger fw-bold" onclick="deleteStock('${sheet.sheetName}', ${i}, '${stockName}', ${currentShares})">賣出</button>
+                     </td>`;
+        bodyHTML += '</tr>';
+      }
+      
+      tbody.innerHTML = bodyHTML;
+
+      // 更新頂部四格儀表板
+      document.getElementById('totalCost').innerText = Math.round(sumCost).toLocaleString();
+      document.getElementById('totalValue').innerText = Math.round(sumValue).toLocaleString();
+      
+      let profitEl = document.getElementById('totalProfit');
+      profitEl.innerText = Math.round(sumProfit).toLocaleString();
+      profitEl.className = 'mb-0 fw-bold ' + (sumProfit > 0 ? 'profit' : (sumProfit < 0 ? 'loss' : 'text-dark'));
+      
+      let todayProfitEl = document.getElementById('todayProfit');
+      todayProfitEl.innerText = Math.round(sumTodayProfit).toLocaleString();
+      todayProfitEl.className = 'mb-0 fw-bold ' + (sumTodayProfit > 0 ? 'profit' : (sumTodayProfit < 0 ? 'loss' : 'text-dark'));
+
+      document.getElementById('dashboard').style.display = 'flex';
+
+      drawVisibleCharts();
+    }
+
+    // === 繪製走勢圖 ===
+    function drawVisibleCharts() {
+        let sparkElements = document.querySelectorAll('.stock-sparkline');
+        let tickersToFetch = [];
+        sparkElements.forEach(el => {
+            let t = el.getAttribute('data-ticker');
+            if (t && !globalChartData[t] && !tickersToFetch.includes(t)) tickersToFetch.push(t);
+        });
+
+        if (tickersToFetch.length > 0) {
+            callAPI('getBatchChartData', { tickers: tickersToFetch }).then(newChartData => {
+                Object.assign(globalChartData, newChartData);
+                renderSparklinesFromCache();
+            }).catch(err => console.error("走勢圖載入失敗", err));
+        } else {
+            renderSparklinesFromCache();
+        }
+    }
+
+    function renderSparklinesFromCache() {
+        let sparkElements = document.querySelectorAll('.stock-sparkline');
+        sparkElements.forEach(el => {
+            if(el.innerHTML === '') return;
+            let t = el.getAttribute('data-ticker');
+            let cData = globalChartData[t];
+            if (cData && cData.prices && cData.prices.length > 0) {
+                el.innerHTML = ''; 
+                var lastPrice = cData.prices[cData.prices.length - 1];
+                var color = (lastPrice >= cData.prevClose) ? '#dc3545' : '#198754';
+                var options = {
+                    series: [{ data: cData.prices }],
+                    chart: { type: 'area', width: 120, height: 40, sparkline: { enabled: true }, animations: { enabled: false } },
+                    stroke: { curve: 'straight', width: 2 },
+                    fill: { opacity: 0.2 },
+                    colors: [color],
+                    tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: function () { return '' } } }, marker: { show: false } }
+                };
+                new ApexCharts(el, options).render();
+            } else if (cData) {
+                el.innerHTML = '<span class="text-muted" style="font-size:12px;">無資料</span>';
+            }
+        });
+    }
+  </script>
+</body>
+</html>
