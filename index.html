@@ -317,110 +317,124 @@
     }
 
     // === 渲染表格與計算儀表板 (包含今日損益自動推算) ===
-    function renderTable(sheetIndex, element) {
-      currentSheetIndex = sheetIndex;
-      document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active'));
-      if(element) element.classList.add('active');
+    function renderTable(data) {
+      const tbody = document.querySelector('#stockTableBody');
+      if (!tbody) return;
 
-      const sheet = globalData[sheetIndex];
-      const data = sheet.data;
-      const thead = document.getElementById('table-head');
-      const tbody = document.getElementById('table-body');
-
-      let headHTML = '<tr>';
-      if(data.length > 0) {
-        data[0].forEach(col => { headHTML += `<th>${col}</th>`; });
-        headHTML += `<th>操作</th>`;
-      }
-      headHTML += '</tr>';
-      thead.innerHTML = headHTML;
-
-      let costIndex = -1, valueIndex = -1, profitIndex = -1;
-      let sharesIndex = -1, changeIndex = -1;
-      
-      if (data.length > 0) {
-        data[0].forEach((col, idx) => {
-          let headerText = col.toString().trim();
-          if(headerText.includes('股數') || headerText.includes('數量')) sharesIndex = idx;
-          if(headerText.includes('成本') && headerText.includes('總')) costIndex = idx;
-          if(headerText.includes('市值') || headerText.includes('現值')) valueIndex = idx;
-          if((headerText.includes('未實現損益') || headerText.includes('損益')) && !headerText.includes('%') && !headerText.includes('今日')) profitIndex = idx; 
-          if(headerText.includes('漲跌') && !headerText.includes('幅') && !headerText.includes('%')) changeIndex = idx;
-        });
+      if (!data || data.length <= 1) {
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">目前沒有持股資料</td></tr>`;
+        return;
       }
 
-      let sumCost = 0, sumValue = 0, sumProfit = 0, sumTodayProfit = 0;
+      // 1. 動態尋找表頭欄位索引
+      let headers = data[0].map(h => h.toString().trim());
+      let cols = {
+        name: -1, code: -1, shares: -1, costPrice: -1, currentPrice: -1,
+        cost: -1, value: -1, profit: -1, changePercent: -1
+      };
+
+      headers.forEach((headerText, idx) => {
+        if (headerText.includes('名稱') || headerText.includes('股票名稱')) cols.name = idx;
+        else if (headerText.includes('代號') || headerText.includes('股票代號')) cols.code = idx;
+        else if (headerText.includes('股數') || headerText.includes('數量') || headerText.includes('持有')) cols.shares = idx;
+        else if (headerText.includes('成本價') || headerText.includes('買進價')) cols.costPrice = idx;
+        else if (headerText.includes('現價') || headerText.includes('收盤價') || headerText.includes('市價')) cols.currentPrice = idx;
+        else if (headerText.includes('成本') && headerText.includes('總')) cols.cost = idx;
+        else if (headerText.includes('市值') || headerText.includes('現值')) cols.value = idx;
+        else if ((headerText.includes('未實現損益') || headerText.includes('損益')) && !headerText.includes('%') && !headerText.includes('今日')) cols.profit = idx;
+        else if (headerText.includes('漲跌幅') || (headerText.includes('漲跌') && headerText.includes('%'))) cols.changePercent = idx;
+      });
+
+      let sumCost = 0;
+      let sumValue = 0;
+      let sumProfit = 0;
+      let sumTodayProfit = 0;
       let bodyHTML = '';
 
-      for(let i = 1; i < data.length; i++) {
-        if(!data[i][0] && !data[i][1]) continue; 
+      // 2. 數值清洗與計算小幫手
+      let parseNum = (val) => {
+        if (val === undefined || val === null || val === '') return 0;
+        let str = val.toString();
+        let isNeg = str.includes('-') || str.includes('▼') || str.includes('跌');
+        let clean = str.replace(/[^\d.]/g, '');
+        let num = parseFloat(clean) || 0;
+        return isNeg ? -num : num;
+      };
 
-        // 數字過濾器
-        let getCleanNumber = (val) => {
-            if (!val) return 0;
-            let str = val.toString();
-            let isNegative = str.includes('-') || str.includes('▼') || str.includes('跌'); 
-            let cleanStr = str.replace(/[^\d.]/g, ''); 
-            let num = parseFloat(cleanStr) || 0;
-            return isNegative ? -num : num;
-        };
+      // 3. 迴圈處理每一筆持股資料
+      for (let i = 1; i < data.length; i++) {
+        let row = data[i];
+        if (!row[0] && !row[1]) continue; // 跳過空行
 
-        if(costIndex !== -1) sumCost += getCleanNumber(data[i][costIndex]);
-        if(valueIndex !== -1) sumValue += getCleanNumber(data[i][valueIndex]);
-        if(profitIndex !== -1) sumProfit += getCleanNumber(data[i][profitIndex]);
+        let name = cols.name !== -1 ? row[cols.name] : (row[0] || '-');
+        let code = cols.code !== -1 ? row[cols.code] : (row[1] || '-');
+        let shares = cols.shares !== -1 ? parseNum(row[cols.shares]) : 0;
+        let costPrice = cols.costPrice !== -1 ? parseNum(row[cols.costPrice]) : 0;
+        let currentPrice = cols.currentPrice !== -1 ? parseNum(row[cols.currentPrice]) : 0;
+        let totalCost = cols.cost !== -1 ? parseNum(row[cols.cost]) : (shares * costPrice);
+        let marketValue = cols.value !== -1 ? parseNum(row[cols.value]) : (shares * currentPrice);
+        let unrealizedProfit = cols.profit !== -1 ? parseNum(row[cols.profit]) : (marketValue - totalCost);
+        
+        let changePercentStr = cols.changePercent !== -1 ? row[cols.changePercent] : '0%';
+        let isNegativeChange = changePercentStr.toString().includes('-') || changePercentStr.toString().includes('▼');
+        let changePercentVal = parseNum(changePercentStr) / 100;
 
-        // 計算今日損益 (漲跌 * 股數)
-        if(changeIndex !== -1 && sharesIndex !== -1) {
-            let changeAmount = getCleanNumber(data[i][changeIndex]);
-            let sharesCount = getCleanNumber(data[i][sharesIndex]);
-            sumTodayProfit += (changeAmount * sharesCount); 
+        // 計算單檔股票的今日損益金額 (透過當前市值與漲跌幅反推)
+        let itemTodayProfit = 0;
+        if (marketValue > 0 && changePercentVal !== 0) {
+          let baseVal = marketValue / (1 + (isNegativeChange ? -changePercentVal : changePercentVal));
+          let diff = marketValue - baseVal;
+          itemTodayProfit = isNegativeChange ? -Math.abs(diff) : Math.abs(diff);
         }
 
-        let stockName = data[i][0] || data[i][1] || '此檔股票';
-        let currentShares = sharesIndex !== -1 ? (parseFloat(data[i][sharesIndex]) || 0) : 0;
+        // 累積總計
+        sumCost += totalCost;
+        sumValue += marketValue;
+        sumProfit += unrealizedProfit;
+        sumTodayProfit += itemTodayProfit;
 
-        bodyHTML += '<tr>';
-        data[i].forEach((cell, index) => {
-          let headerText = data[0][index] || "";
-          if (headerText.includes('走勢')) {
-              let ticker = cell.toString().trim();
-              let uniqueId = 'spark_' + sheetIndex + '_' + i;
-              bodyHTML += `<td style="width:120px; vertical-align:middle;"><div id="${uniqueId}" class="stock-sparkline" data-ticker="${ticker}">⏳</div></td>`;
-              return;
-          }
+        // 樣式設定
+        let profitClass = unrealizedProfit >= 0 ? 'text-danger' : 'text-success'; // 台股紅漲綠跌
+        let todayProfitClass = itemTodayProfit >= 0 ? 'text-danger' : 'text-success';
+        let percentClass = isNegativeChange ? 'text-success' : 'text-danger';
 
-          let cellClass = '';
-          let numVal = parseFloat(cell.toString().replace(/,/g, '').replace('%', ''));
-          if ((headerText.includes('漲跌') || headerText.includes('損益') || headerText.includes('報酬')) && !isNaN(numVal) && cell !== '') {
-              if (numVal > 0 || cell.toString().includes('▲')) cellClass = 'profit';
-              else if (numVal < 0 || cell.toString().includes('▼')) cellClass = 'loss';
-          }
-          bodyHTML += `<td class="${cellClass}">${cell}</td>`;
-        });
-        
-        bodyHTML += `<td style="vertical-align:middle;">
-                       <button class="btn btn-sm btn-outline-danger fw-bold" onclick="deleteStock('${sheet.sheetName}', ${i}, '${stockName}', ${currentShares})">賣出</button>
-                     </td>`;
-        bodyHTML += '</tr>';
+        // 組合單行 HTML
+        bodyHTML += `
+          <tr>
+            <td><strong>${name}</strong><br><small class="text-muted">${code}</small></td>
+            <td>${shares.toLocaleString()}</td>
+            <td>${costPrice.toFixed(2)}</td>
+            <td>${currentPrice.toFixed(2)}</td>
+            <td>${totalCost.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+            <td>${marketValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+            <td class="${profitClass}">${unrealizedProfit.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+            <td class="${todayProfitClass}">${itemTodayProfit.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+            <td class="${percentClass}">${changePercentStr}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-danger" onclick="openSellModal('${code}', ${shares}, ${i})">調整股數</button>
+            </td>
+          </tr>
+        `;
       }
-      
+
       tbody.innerHTML = bodyHTML;
 
-      // 更新頂部四格儀表板
-      document.getElementById('totalCost').innerText = Math.round(sumCost).toLocaleString();
-      document.getElementById('totalValue').innerText = Math.round(sumValue).toLocaleString();
-      
-      let profitEl = document.getElementById('totalProfit');
-      profitEl.innerText = Math.round(sumProfit).toLocaleString();
-      profitEl.className = 'mb-0 fw-bold ' + (sumProfit > 0 ? 'profit' : (sumProfit < 0 ? 'loss' : 'text-dark'));
-      
-      let todayProfitEl = document.getElementById('todayProfit');
-      todayProfitEl.innerText = Math.round(sumTodayProfit).toLocaleString();
-      todayProfitEl.className = 'mb-0 fw-bold ' + (sumTodayProfit > 0 ? 'profit' : (sumTodayProfit < 0 ? 'loss' : 'text-dark'));
+      // 4. 更新頂部的總覽數據介面
+      let elCost = document.querySelector('#sumTotalCost');
+      let elValue = document.querySelector('#sumTotalValue');
+      let elProfit = document.querySelector('#sumTotalProfit');
+      let elTodayProfit = document.querySelector('#sumTodayProfit');
 
-      document.getElementById('dashboard').style.display = 'flex';
-
-      drawVisibleCharts();
+      if (elCost) elCost.textContent = sumCost.toLocaleString(undefined, {maximumFractionDigits: 0});
+      if (elValue) elValue.textContent = sumValue.toLocaleString(undefined, {maximumFractionDigits: 0});
+      if (elProfit) {
+        elProfit.textContent = sumProfit.toLocaleString(undefined, {maximumFractionDigits: 0});
+        elProfit.className = sumProfit >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+      }
+      if (elTodayProfit) {
+        elTodayProfit.textContent = sumTodayProfit.toLocaleString(undefined, {maximumFractionDigits: 0});
+        elTodayProfit.className = sumTodayProfit >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+      }
     }
 
     // === 繪製走勢圖 ===
