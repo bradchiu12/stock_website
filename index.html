@@ -342,7 +342,7 @@
         else if (headerText.includes('成本') && headerText.includes('總')) cols.cost = idx;
         else if (headerText.includes('市值') || headerText.includes('現值')) cols.value = idx;
         else if ((headerText.includes('未實現損益') || headerText.includes('損益')) && !headerText.includes('%') && !headerText.includes('今日')) cols.profit = idx;
-        else if (headerText.includes('漲跌幅') || (headerText.includes('漲跌') && headerText.includes('%'))) cols.changePercent = idx;
+        else if (headerText.includes('今日漲跌幅') || headerText.includes('漲跌幅') || headerText.includes('漲跌')) cols.changePercent = idx;
       });
 
       let sumCost = 0;
