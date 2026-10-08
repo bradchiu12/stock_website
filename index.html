@@ -188,7 +188,33 @@
         throw new Error(err);
       }
     }
-
+    // ==========================================
+    // 🚀 網頁開機自動執行：抓取資料並繪製表格
+    // ==========================================
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        console.log("正在載入持股資料...");
+        
+        // 1. 透過你原本完美的 callAPI 取得試算表資料
+        let data = await callAPI('getSheetData');
+        
+        // 2. 渲染主表格並計算本日損益
+        if (data && Array.isArray(data)) {
+          renderTable(data);
+        } else {
+          console.warn("回傳的資料格式不是陣列：", data);
+        }
+        
+        // 3. 如果你有大盤資訊，也可以在這裡呼叫
+        if (typeof loadTaiex === 'function') {
+          loadTaiex();
+        }
+        
+      } catch (err) {
+        console.error("載入失敗：", err);
+      }
+    });
+    
     // === 讀取大盤資訊功能 ===
     function loadTaiex(isBackground = false) {
       const display = document.getElementById('taiexDisplay');
