@@ -158,20 +158,27 @@
     let currentSheetIndex = 0; 
 
     // === 🚀 核心通訊機制：與 Apps Script API 溝通 ===
+    // === 🚀 核心通訊機制：繞過 Google CORS 與多帳號衝突 ===
     async function callAPI(action, payload = null) {
       try {
-        let response;
+        let options = { 
+          redirect: "follow",
+          credentials: "omit" // 🌟 【終極殺手鐧】不傳送 Google 登入狀態，強制作為匿名路人存取，完美避開 CORS 阻擋！
+        };
+        
         if (payload) {
           payload.action = action;
-          response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify(payload),
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' } // 使用 text/plain 避開 CORS 限制
-          });
+          options.method = 'POST';
+          options.body = JSON.stringify(payload);
+          options.headers = { 'Content-Type': 'text/plain;charset=utf-8' }; // 避開跨域檢查
+          
+          let response = await fetch(SCRIPT_URL, options);
+          return await response.json();
         } else {
-          response = await fetch(SCRIPT_URL + "?action=" + action);
+          options.method = 'GET';
+          let response = await fetch(SCRIPT_URL + "?action=" + action, options);
+          return await response.json();
         }
-        return await response.json();
       } catch (err) {
         throw new Error(err);
       }
