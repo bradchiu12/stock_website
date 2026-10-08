@@ -16,76 +16,47 @@
     .nav-tabs .nav-link { cursor: pointer; font-weight: bold; color: #6c757d; border-radius: 8px 8px 0 0; }
     .nav-tabs .nav-link.active { color: #0d6efd; border-bottom: 3px solid #0d6efd; background-color: #f8f9fa; }
     
-    /* 凍結表格標題列 (手機滑動時標題固定) */
-    .table-responsive { 
-      margin-top: 20px; 
-      max-height: 60vh; 
-      overflow-y: auto; 
-    }
-    #table-head th {
-      position: sticky;
-      top: 0;
-      z-index: 10; 
-      background-color: #212529 !important; 
-      color: white;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2); 
-    }
+    .table-responsive { margin-top: 20px; max-height: 60vh; overflow-y: auto; }
+    #table-head th { position: sticky; top: 0; z-index: 10; background-color: #212529 !important; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
   </style>
 </head>
 <body>
   <div class="container">
-    
-    <!-- 標題與按鈕區塊 -->
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4">
       <h2 class="fw-bold mb-3 mb-md-0">📈 我的專屬持股看板</h2>
-      
-      <!-- 右側按鈕群與大盤膠囊 -->
       <div class="d-flex align-items-center flex-wrap justify-content-center gap-2">
-        <!-- 大盤加權指數 (專業雙層排版版) -->
         <div class="px-3 py-2 rounded bg-white border shadow-sm d-flex align-items-center">
           <span class="fw-bold text-muted me-3" style="font-size: 0.95rem;">大盤</span>
           <div id="taiexDisplay" class="text-end">
-            <!-- 這裡預留給讀取中的轉圈圈 -->
             <span class="spinner-border spinner-border-sm text-muted" role="status" aria-hidden="true"></span>
           </div>
         </div>
-        
-        <button class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">
-          ➕ 新增持股
-        </button>
-        <button id="refreshBtn" class="btn btn-primary shadow-sm" onclick="refreshWebData()">
-          🔄 獲取最新即時股價
-        </button>
+        <button class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#addStockModal">➕ 新增持股</button>
+        <button id="refreshBtn" class="btn btn-primary shadow-sm" onclick="refreshWebData()">🔄 獲取最新即時股價</button>
       </div>
     </div>
 
-    <!-- 頂部數據儀表板 (四格響應式升級版：加入今日損益) -->
+    <!-- 頂部數據儀表板 -->
     <div id="dashboard" class="row mb-4" style="display:none;">
       <div class="col-12">
         <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);">
           <div class="card-body row text-center py-3 m-0 align-items-center">
-            
             <div class="col-6 col-md-3 mb-3 mb-md-0">
               <div class="text-muted fw-bold mb-1" style="font-size: 0.85rem;">總投入成本</div>
               <h5 id="totalCost" class="mb-0 fw-bold text-dark">0</h5>
             </div>
-            
             <div class="col-6 col-md-3 mb-3 mb-md-0">
               <div class="text-muted fw-bold mb-1" style="font-size: 0.85rem;">總市值</div>
               <h5 id="totalValue" class="mb-0 fw-bold text-dark">0</h5>
             </div>
-            
-            <!-- 新增：今日損益區塊 -->
             <div class="col-6 col-md-3 mt-2 mt-md-0 border-md-start">
               <div class="text-muted fw-bold mb-1" style="font-size: 0.9rem;">今日損益</div>
               <h4 id="todayProfit" class="mb-0 fw-bold">0</h4>
             </div>
-
             <div class="col-6 col-md-3 mt-2 mt-md-0">
               <div class="text-muted fw-bold mb-1" style="font-size: 0.9rem;">未實現總損益</div>
               <h4 id="totalProfit" class="mb-0 fw-bold">0</h4>
             </div>
-            
           </div>
         </div>
       </div>
@@ -144,7 +115,6 @@
   </div>
 
   <script>
-    // 👇👇👇 【非常重要】請將這裡換成你剛從 Apps Script 部署拿到的「網頁應用程式網址」 👇👇👇
     const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzMSJhBYggMlS65FDNa-LqH0rjSUkknLETRKrNEDGi_MwMuCVyDtypn9B2BH-Z0S1uk/exec'; 
 
     window.onerror = function(msg, url, lineNo) { showError(`前端語法錯誤：${msg} (行 ${lineNo})`); return false; };
@@ -154,28 +124,17 @@
     }
 
     let globalData = []; 
-    let globalChartData = {}; 
     let currentSheetIndex = 0; 
 
-    // === 🚀 核心通訊機制：與 Apps Script API 溝通 ===
-    // === 🚀 核心通訊機制：繞過 Google CORS 與多帳號衝突 ===
-    // === 🚀 具備防呆機制的 API 通訊機制 ===
     async function callAPI(action, payload = null) {
       try {
-        // 🛡️ 防呆：如果 action 不小心是空的或 undefined，預設抓取試算表資料
         if (!action) action = 'getSheetData';
-
-        let options = { 
-          redirect: "follow",
-          credentials: "omit" 
-        };
-        
+        let options = { redirect: "follow", credentials: "omit" };
         if (payload) {
           payload.action = action;
           options.method = 'POST';
           options.body = JSON.stringify(payload);
           options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
-          
           let response = await fetch(SCRIPT_URL, options);
           return await response.json();
         } else {
@@ -188,34 +147,19 @@
         throw new Error(err);
       }
     }
-    // ==========================================
-    // 🚀 網頁開機自動執行：抓取資料並繪製表格
-    // ==========================================
-    document.addEventListener('DOMContentLoaded', async () => {
-      try {
-        console.log("正在載入持股資料...");
-        
-        // 1. 透過你原本完美的 callAPI 取得試算表資料
-        let data = await callAPI('getSheetData');
-        
-        // 2. 渲染主表格並計算本日損益
-        if (data && Array.isArray(data)) {
-          renderTable(data);
-        } else {
-          console.warn("回傳的資料格式不是陣列：", data);
-        }
-        
-        // 3. 如果你有大盤資訊，也可以在這裡呼叫
-        if (typeof loadTaiex === 'function') {
-          loadTaiex();
-        }
-        
-      } catch (err) {
-        console.error("載入失敗：", err);
-      }
+
+    // === 網頁啟動：單一統一的開機引擎 ===
+    document.addEventListener('DOMContentLoaded', () => {
+      loadTaiex(); 
+      setInterval(() => loadTaiex(true), 10000); 
+
+      callAPI('getSheetData').then(data => {
+         if(data.error) throw new Error(data.error);
+         if(!data) throw new Error("無資料"); 
+         showData(data); 
+      }).catch(err => showError("連線錯誤：" + err.message));
     });
     
-    // === 讀取大盤資訊功能 ===
     function loadTaiex(isBackground = false) {
       const display = document.getElementById('taiexDisplay');
       if (!isBackground) display.innerHTML = '<span class="spinner-border spinner-border-sm text-muted" role="status"></span>';
@@ -239,32 +183,17 @@
       }).catch(err => console.error(err));
     }
 
-    // === 網頁初次啟動邏輯 ===
-    try {
-      loadTaiex(); 
-      setInterval(() => loadTaiex(true), 10000); // 10秒背景更新大盤
-
-      callAPI('getSheetData').then(data => {
-         if(data.error) throw new Error(data.error);
-         if(!data) throw new Error("無資料"); 
-         showData(data); 
-      }).catch(err => showError("連線錯誤：" + err.message));
-    } catch(err) { showError("系統啟動失敗：" + err.message); }
-
-    // === 重新獲取資料 ===
     function refreshWebData() {
       const btn = document.getElementById('refreshBtn');
       const app = document.getElementById('app');
-      
       btn.disabled = true; btn.innerHTML = '⏳ 抓取中...';
       app.style.display = 'none';
+      document.getElementById('dashboard').style.display = 'none';
       document.getElementById('spinner-icon').style.display = 'inline-block';
       document.getElementById('loading-text').innerHTML = '從資料庫讀取最新即時報價中...';
       document.getElementById('loading').style.display = 'block';
       
-      globalChartData = {}; 
       loadTaiex(); 
-
       callAPI('forceRefreshData').then(data => {
           showData(data); 
           btn.disabled = false; btn.innerHTML = '🔄 獲取最新即時股價'; 
@@ -274,7 +203,6 @@
       });
     }
 
-    // === 新增持股 ===
     function submitStock() {
       const sheetName = document.getElementById('inputSheetIndex').value;
       const data = {
@@ -282,7 +210,6 @@
         cost: document.getElementById('inputCost').value,
         shares: document.getElementById('inputShares').value
       };
-      
       if(!data.ticker) { alert("請輸入股票代號！"); return; }
       
       var modalEl = document.getElementById('addStockModal');
@@ -290,6 +217,7 @@
       modal.hide();
       
       document.getElementById('app').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'none';
       document.getElementById('spinner-icon').style.display = 'inline-block';
       document.getElementById('loading-text').innerHTML = '資料寫入資料庫並重新計算中...';
       document.getElementById('loading').style.display = 'block';
@@ -302,7 +230,6 @@
       }).catch(err => showError("新增失敗：" + err.message));
     }
 
-    // === 刪除/賣出持股 ===
     function deleteStock(sheetName, rowIndex, stockName, currentShares) {
       let input = prompt(`您目前持有「${stockName}」共 ${currentShares} 股。\n請輸入這次要賣出/刪除的股數：`, currentShares);
       if (input === null || input.trim() === "") return; 
@@ -311,6 +238,7 @@
       if (isNaN(sellShares) || sellShares <= 0) { alert("請輸入有效的正數字！"); return; }
 
       document.getElementById('app').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'none';
       document.getElementById('spinner-icon').style.display = 'inline-block';
       document.getElementById('loading-text').innerHTML = '正在更新持股資料中...';
       document.getElementById('loading').style.display = 'block';
@@ -320,10 +248,10 @@
         .catch(err => showError("更新失敗：" + err.message));
     }
 
-    // === 顯示選單與切換分頁 ===
     function showData(allSheetsData) {
       document.getElementById('loading').style.display = 'none';
       document.getElementById('app').style.display = 'block';
+      document.getElementById('dashboard').style.display = 'flex';
       globalData = allSheetsData;
 
       const tabsContainer = document.getElementById('sheetTabs');
@@ -339,45 +267,52 @@
       tabsContainer.innerHTML = tabsHTML;
       selectBox.innerHTML = selectHTML;
 
-      if (allSheetsData.length > 0) renderTable(currentSheetIndex, tabsContainer.querySelector('.nav-link.active'));
+      if (allSheetsData.length > 0) {
+        renderTable(currentSheetIndex, tabsContainer.querySelector('.nav-link.active'));
+      }
     }
 
-    // === 渲染表格與計算儀表板 (包含今日損益自動推算) ===
-    function renderTable(data) {
-      const tbody = document.querySelector('#stockTableBody');
-      if (!tbody) return;
+    // === 表格渲染大腦：支援分頁、動態欄位保留、精準計算 ===
+    function renderTable(sheetIndex, tabEl = null) {
+      currentSheetIndex = sheetIndex;
+      
+      if (tabEl) {
+        document.querySelectorAll('#sheetTabs .nav-link').forEach(el => el.classList.remove('active'));
+        tabEl.classList.add('active');
+      }
+
+      const thead = document.querySelector('#table-head');
+      const tbody = document.querySelector('#table-body');
+      if (!tbody || !thead) return;
+
+      let sheetObj = globalData[sheetIndex];
+      if (!sheetObj) return;
+      
+      let data = sheetObj.data || sheetObj;
 
       if (!data || data.length <= 1) {
+        thead.innerHTML = '';
         tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">目前沒有持股資料</td></tr>`;
         return;
       }
 
-      // 1. 動態尋找表頭欄位索引
+      // 1. 動態建立表頭
       let headers = data[0].map(h => h.toString().trim());
-      let cols = {
-        name: -1, code: -1, shares: -1, costPrice: -1, currentPrice: -1,
-        cost: -1, value: -1, profit: -1, changePercent: -1
-      };
+      thead.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '<th>操作</th></tr>';
 
+      let cols = { name: -1, shares: -1, cost: -1, value: -1, profit: -1, changePercent: -1 };
       headers.forEach((headerText, idx) => {
         if (headerText.includes('名稱') || headerText.includes('股票名稱')) cols.name = idx;
-        else if (headerText.includes('代號') || headerText.includes('股票代號')) cols.code = idx;
         else if (headerText.includes('股數') || headerText.includes('數量') || headerText.includes('持有')) cols.shares = idx;
-        else if (headerText.includes('成本價') || headerText.includes('買進價')) cols.costPrice = idx;
-        else if (headerText.includes('現價') || headerText.includes('收盤價') || headerText.includes('市價')) cols.currentPrice = idx;
         else if (headerText.includes('成本') && headerText.includes('總')) cols.cost = idx;
         else if (headerText.includes('市值') || headerText.includes('現值')) cols.value = idx;
         else if ((headerText.includes('未實現損益') || headerText.includes('損益')) && !headerText.includes('%') && !headerText.includes('今日')) cols.profit = idx;
-        else if (headerText.includes('漲跌幅') || (headerText.includes('漲跌') && headerText.includes('%'))) cols.changePercent = idx;
+        else if (headerText.includes('今日漲跌幅') || headerText.includes('漲跌幅') || headerText.includes('漲跌')) cols.changePercent = idx;
       });
 
-      let sumCost = 0;
-      let sumValue = 0;
-      let sumProfit = 0;
-      let sumTodayProfit = 0;
+      let sumCost = 0, sumValue = 0, sumProfit = 0, sumTodayProfit = 0;
       let bodyHTML = '';
 
-      // 2. 數值清洗與計算小幫手
       let parseNum = (val) => {
         if (val === undefined || val === null || val === '') return 0;
         let str = val.toString();
@@ -387,25 +322,18 @@
         return isNeg ? -num : num;
       };
 
-      // 3. 迴圈處理每一筆持股資料
+      // 2. 建立表格內容與計算
       for (let i = 1; i < data.length; i++) {
         let row = data[i];
-        if (!row[0] && !row[1]) continue; // 跳過空行
+        if (!row[0] && !row[1]) continue;
 
-        let name = cols.name !== -1 ? row[cols.name] : (row[0] || '-');
-        let code = cols.code !== -1 ? row[cols.code] : (row[1] || '-');
-        let shares = cols.shares !== -1 ? parseNum(row[cols.shares]) : 0;
-        let costPrice = cols.costPrice !== -1 ? parseNum(row[cols.costPrice]) : 0;
-        let currentPrice = cols.currentPrice !== -1 ? parseNum(row[cols.currentPrice]) : 0;
-        let totalCost = cols.cost !== -1 ? parseNum(row[cols.cost]) : (shares * costPrice);
-        let marketValue = cols.value !== -1 ? parseNum(row[cols.value]) : (shares * currentPrice);
-        let unrealizedProfit = cols.profit !== -1 ? parseNum(row[cols.profit]) : (marketValue - totalCost);
-        
+        let marketValue = cols.value !== -1 ? parseNum(row[cols.value]) : 0;
+        let unrealizedProfit = cols.profit !== -1 ? parseNum(row[cols.profit]) : 0;
+        let totalCost = cols.cost !== -1 ? parseNum(row[cols.cost]) : 0;
         let changePercentStr = cols.changePercent !== -1 ? row[cols.changePercent] : '0%';
         let isNegativeChange = changePercentStr.toString().includes('-') || changePercentStr.toString().includes('▼');
         let changePercentVal = parseNum(changePercentStr) / 100;
 
-        // 計算單檔股票的今日損益金額 (透過當前市值與漲跌幅反推)
         let itemTodayProfit = 0;
         if (marketValue > 0 && changePercentVal !== 0) {
           let baseVal = marketValue / (1 + (isNegativeChange ? -changePercentVal : changePercentVal));
@@ -413,98 +341,44 @@
           itemTodayProfit = isNegativeChange ? -Math.abs(diff) : Math.abs(diff);
         }
 
-        // 累積總計
         sumCost += totalCost;
         sumValue += marketValue;
         sumProfit += unrealizedProfit;
         sumTodayProfit += itemTodayProfit;
 
-        // 樣式設定
-        let profitClass = unrealizedProfit >= 0 ? 'text-danger' : 'text-success'; // 台股紅漲綠跌
-        let todayProfitClass = itemTodayProfit >= 0 ? 'text-danger' : 'text-success';
-        let percentClass = isNegativeChange ? 'text-success' : 'text-danger';
-
-        // 組合單行 HTML
-        bodyHTML += `
-          <tr>
-            <td><strong>${name}</strong><br><small class="text-muted">${code}</small></td>
-            <td>${shares.toLocaleString()}</td>
-            <td>${costPrice.toFixed(2)}</td>
-            <td>${currentPrice.toFixed(2)}</td>
-            <td>${totalCost.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-            <td>${marketValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-            <td class="${profitClass}">${unrealizedProfit.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-            <td class="${todayProfitClass}">${itemTodayProfit.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-            <td class="${percentClass}">${changePercentStr}</td>
-            <td>
-              <button class="btn btn-sm btn-outline-danger" onclick="openSellModal('${code}', ${shares}, ${i})">調整股數</button>
-            </td>
-          </tr>
-        `;
+        let trHTML = '<tr>';
+        row.forEach((cellData, cellIdx) => {
+           let extraClass = '';
+           if (cellIdx === cols.profit) extraClass = unrealizedProfit >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+           if (cellIdx === cols.changePercent) extraClass = isNegativeChange ? 'text-success fw-bold' : 'text-danger fw-bold';
+           trHTML += `<td class="${extraClass}">${cellData !== undefined ? cellData : ''}</td>`;
+        });
+        
+        let stockName = cols.name !== -1 ? row[cols.name] : '未命名';
+        let stockShares = cols.shares !== -1 ? parseNum(row[cols.shares]) : 0;
+        
+        trHTML += `<td><button class="btn btn-sm btn-outline-danger shadow-sm" onclick="deleteStock('${sheetObj.sheetName}', ${i}, '${stockName}', ${stockShares})">刪除/賣出</button></td></tr>`;
+        bodyHTML += trHTML;
       }
 
       tbody.innerHTML = bodyHTML;
 
-      // 4. 更新頂部的總覽數據介面
-      let elCost = document.querySelector('#sumTotalCost');
-      let elValue = document.querySelector('#sumTotalValue');
-      let elProfit = document.querySelector('#sumTotalProfit');
-      let elTodayProfit = document.querySelector('#sumTodayProfit');
+      // 3. 更新儀表板
+      let elCost = document.querySelector('#totalCost');
+      let elValue = document.querySelector('#totalValue');
+      let elProfit = document.querySelector('#totalProfit');
+      let elTodayProfit = document.querySelector('#todayProfit');
 
       if (elCost) elCost.textContent = sumCost.toLocaleString(undefined, {maximumFractionDigits: 0});
       if (elValue) elValue.textContent = sumValue.toLocaleString(undefined, {maximumFractionDigits: 0});
       if (elProfit) {
         elProfit.textContent = sumProfit.toLocaleString(undefined, {maximumFractionDigits: 0});
-        elProfit.className = sumProfit >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+        elProfit.className = sumProfit >= 0 ? 'mb-0 fw-bold text-danger' : 'mb-0 fw-bold text-success';
       }
       if (elTodayProfit) {
         elTodayProfit.textContent = sumTodayProfit.toLocaleString(undefined, {maximumFractionDigits: 0});
-        elTodayProfit.className = sumTodayProfit >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+        elTodayProfit.className = sumTodayProfit >= 0 ? 'mb-0 fw-bold text-danger' : 'mb-0 fw-bold text-success';
       }
-    }
-
-    // === 繪製走勢圖 ===
-    function drawVisibleCharts() {
-        let sparkElements = document.querySelectorAll('.stock-sparkline');
-        let tickersToFetch = [];
-        sparkElements.forEach(el => {
-            let t = el.getAttribute('data-ticker');
-            if (t && !globalChartData[t] && !tickersToFetch.includes(t)) tickersToFetch.push(t);
-        });
-
-        if (tickersToFetch.length > 0) {
-            callAPI('getBatchChartData', { tickers: tickersToFetch }).then(newChartData => {
-                Object.assign(globalChartData, newChartData);
-                renderSparklinesFromCache();
-            }).catch(err => console.error("走勢圖載入失敗", err));
-        } else {
-            renderSparklinesFromCache();
-        }
-    }
-
-    function renderSparklinesFromCache() {
-        let sparkElements = document.querySelectorAll('.stock-sparkline');
-        sparkElements.forEach(el => {
-            if(el.innerHTML === '') return;
-            let t = el.getAttribute('data-ticker');
-            let cData = globalChartData[t];
-            if (cData && cData.prices && cData.prices.length > 0) {
-                el.innerHTML = ''; 
-                var lastPrice = cData.prices[cData.prices.length - 1];
-                var color = (lastPrice >= cData.prevClose) ? '#dc3545' : '#198754';
-                var options = {
-                    series: [{ data: cData.prices }],
-                    chart: { type: 'area', width: 120, height: 40, sparkline: { enabled: true }, animations: { enabled: false } },
-                    stroke: { curve: 'straight', width: 2 },
-                    fill: { opacity: 0.2 },
-                    colors: [color],
-                    tooltip: { fixed: { enabled: false }, x: { show: false }, y: { title: { formatter: function () { return '' } } }, marker: { show: false } }
-                };
-                new ApexCharts(el, options).render();
-            } else if (cData) {
-                el.innerHTML = '<span class="text-muted" style="font-size:12px;">無資料</span>';
-            }
-        });
     }
   </script>
 </body>
