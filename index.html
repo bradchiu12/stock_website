@@ -149,7 +149,16 @@
     }
 
     // === 網頁啟動：單一統一的開機引擎 ===
+    // === 網頁啟動：單一統一的開機引擎 ===
     document.addEventListener('DOMContentLoaded', () => {
+      // 🔒 簡易密碼鎖
+      const password = prompt('請輸入看板解鎖密碼：');
+      if (password !== '8888') { // <-- 這裡的 8888 可以改成你想要的密碼
+        document.body.innerHTML = '<h3 style="text-align:center; margin-top:50px; color:#dc3545;">❌ 密碼錯誤，拒絕存取</h3>';
+        return; // 密碼錯了就直接中斷，畫面變白白一句話，絕對不會去抓資料
+      }
+
+      // 密碼正確，繼續載入資料
       loadTaiex(); 
       setInterval(() => loadTaiex(true), 10000); 
 
