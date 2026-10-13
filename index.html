@@ -115,7 +115,7 @@
   </div>
 
   <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwdeKbHc-urBNYziSGvVeB3aednwlm3cRO11DydC3SwI49gDQbEvA9Sd736LhgJKfUe/exec'; 
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwi2gNVRPaVbumkKILNQ7jprcMSoGcTg3YUn3qxk4lUa5cenvxHmPwbWIS0OJuy4I6K/exec'; 
 
     window.onerror = function(msg, url, lineNo) { showError(`前端語法錯誤：${msg} (行 ${lineNo})`); return false; };
     function showError(errorMsg) {
@@ -126,12 +126,17 @@
     let globalData = []; 
     let currentSheetIndex = 0; 
 
+    // 儲存使用者剛剛輸入的密碼
+    let sessionPwd = ""; 
+
     async function callAPI(action, payload = null) {
       try {
         if (!action) action = 'getSheetData';
         let options = { redirect: "follow", credentials: "omit" };
+        
         if (payload) {
           payload.action = action;
+          payload.pwd = sessionPwd; // 🛡️ POST：自動把密碼包在行李箱裡傳給 Google
           options.method = 'POST';
           options.body = JSON.stringify(payload);
           options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
@@ -139,7 +144,8 @@
           return await response.json();
         } else {
           options.method = 'GET';
-          let targetUrl = SCRIPT_URL + "?action=" + encodeURIComponent(action);
+          // 🛡️ GET：自動把密碼接在網址後面傳給 Google
+          let targetUrl = SCRIPT_URL + "?action=" + encodeURIComponent(action) + "&pwd=" + encodeURIComponent(sessionPwd);
           let response = await fetch(targetUrl, options);
           return await response.json();
         }
@@ -148,25 +154,28 @@
       }
     }
 
-    // === 網頁啟動：單一統一的開機引擎 ===
-    // === 網頁啟動：單一統一的開機引擎 ===
+    // === 網頁啟動：密碼輸入與後端交涉 ===
     document.addEventListener('DOMContentLoaded', () => {
-      // 🔒 簡易密碼鎖
-      const password = prompt('請輸入看板解鎖密碼：');
-      if (password !== '2112') { // <-- 這裡的 8888 可以改成你想要的密碼
-        document.body.innerHTML = '<h3 style="text-align:center; margin-top:50px; color:#dc3545;">❌ 密碼錯誤，拒絕存取</h3>';
-        return; // 密碼錯了就直接中斷，畫面變白白一句話，絕對不會去抓資料
+      // 索取密碼 (前端不再判斷對錯，直接交給 Google 審判)
+      sessionPwd = prompt('請輸入看板解鎖密碼：') || "";
+      
+      if (!sessionPwd) {
+        document.body.innerHTML = '<h3 style="text-align:center; margin-top:50px; color:#dc3545;">❌ 未輸入密碼，拒絕連線</h3>';
+        return;
       }
 
-      // 密碼正確，繼續載入資料
       loadTaiex(); 
       setInterval(() => loadTaiex(true), 10000); 
 
       callAPI('getSheetData').then(data => {
-         if(data.error) throw new Error(data.error);
+         // 如果密碼錯誤，Google 會回傳 error 欄位
+         if(data.error) {
+            document.body.innerHTML = `<h3 style="text-align:center; margin-top:50px; color:#dc3545;">❌ ${data.error}</h3>`;
+            throw new Error(data.error);
+         }
          if(!data) throw new Error("無資料"); 
          showData(data); 
-      }).catch(err => showError("連線錯誤：" + err.message));
+      }).catch(err => showError("連線遭拒：" + err.message));
     });
     
     function loadTaiex(isBackground = false) {
